@@ -112,7 +112,7 @@ typedef int64_t s8;
 #define CHECK_GE(a, b) CHECK_IMPL((a), >=, (b))
 
 #define PROG_NAME "vdexExtractor"
-#define PROG_VERSION "0.3.1 (beta)"
+#define PROG_VERSION "0.3.1"
 #define PROG_AUTHORS                                    \
   "    Anestis Bechtsoudis <anestis@census-labs.com>\n" \
   "  Copyright 2017 by CENSUS S.A. All Rights Reserved."
@@ -130,6 +130,7 @@ typedef struct {
   bool enableDisassembler;
   bool dumpDeps;
   bool classRecover;
+  char *newCrcFile;
 } runArgs_t;
 
 extern void exitWrapper(int);

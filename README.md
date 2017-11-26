@@ -2,10 +2,9 @@
 
 Command line tool to decompile and extract Android Dex bytecode from Vdex files that are generated
 along with Oat files when optimizing bytecode from dex2oat ART runtime compiler. Vdex file format
-has been introduced in the Oreo (API-26) build. More information is available
-[here](https://android-review.googlesource.com/#/c/264514/). It should be noted that Oat files are
-no longer storing the matching Dex files inside their `.rodata` section. Instead they're always
-paired with a matching Vdex file.
+has been introduced in the Oreo (API-26) build. More information is available [here][vdex-cr]. It
+should be noted that Oat files are no longer storing the matching Dex files inside their `.rodata`
+section. Instead they're always paired with a matching Vdex file.
 
 
 ## Compile
@@ -26,20 +25,21 @@ paired with a matching Vdex file.
 
 ```
 $ bin/vdexExtractor -h
-              vdexExtractor ver. 0.3.1 (beta)
+              vdexExtractor ver. 0.3.1
     Anestis Bechtsoudis <anestis@census-labs.com>
   Copyright 2017 by CENSUS S.A. All Rights Reserved.
 
- -i, --input=<path>   : input dir (1 max depth) or single file
- -o, --output=<path>  : output path (default is same as input)
- -f, --file-override  : allow output file override if already exists
- -u, --unquicken      : enable unquicken bytecode decompiler (also known as de-odex)
- -D, --dump-deps      : dump verified dependencies information
- -d, --disassemble    : enable bytecode disassembler
- -r, --class-recover  : dump information useful to recover original class name (json file to output path)
- -v, --debug=LEVEL    : log level (0 - FATAL ... 4 - DEBUG), default: '3' (INFO)
- -l, --log-file=<path>: save disassembler and/or verified dependencies output to log file (default is STDOUT)
- -h, --help           : this help
+ -i, --input=<path>    : input dir (1 max depth) or single file
+ -o, --output=<path>   : output path (default is same as input)
+ -f, --file-override   : allow output file override if already exists
+ -u, --unquicken       : enable unquicken bytecode decompiler (also known as de-odex)
+ -D, --dump-deps       : dump verified dependencies information
+ -d, --disassemble     : enable bytecode disassembler
+ -r, --class-recover   : dump information useful to recover original class name (json file to output path)
+ -n, --new-crc=<path>  : Text file with extracted Apk or Dex file location checksum(s)
+ -v, --debug=LEVEL     : log level (0 - FATAL ... 4 - DEBUG), default: '3' (INFO)
+ -l, --log-file=<path> : save disassembler and/or verified dependencies output to log file (default is STDOUT)
+ -h, --help            : this help
 ```
 
 
@@ -51,12 +51,9 @@ tool capable to revert optimized bytecode, that does not require building the en
 AOSP.
 
 The Vdex fully unquicken functionality has been also implemented as part of the AOSP oatdump libart
-tool. The upstream contribution is available
-[here](https://android.googlesource.com/platform/art/+/a1f56a8dddb88f5377a7dd4ec79640103c713d30).
-If you want to use oatdump with Oreo release you can use the corresponding patch
-[here](https://gist.github.com/anestisb/71d6b0496912f801533dec9d264aa409) or fork and build (inside
-and AOSP_SRC_ROOT workspace) the oreo-release branch of the
-[oatdump++](https://github.com/anestisb/oatdump_plus/tree/oreo-release) tool.
+tool. The upstream contribution is available [here][aosp-master]. If you want to use oatdump with
+Oreo release you can use the corresponding patch [here][oatdump-oreo] or fork and build (inside and
+AOSP_SRC_ROOT workspace) the oreo-release branch of the [oatdump++][oatdump-plus] tool.
 
 
 ## Verified Dependencies Iterator
@@ -340,7 +337,7 @@ $ cat /tmp/CarrierConfig.apk_classes.json
   from a connected Android device. Also supports extracting APK archives of installed packages. Some
   system app data might fail to extract without root access due to applied DAC permissions.
 
-  ```
+  ```text
   $ scripts/extract-apps-from-device.sh -h
     Usage: extract-apps-from-device.sh [options]
       options:
@@ -355,10 +352,29 @@ $ cat /tmp/CarrierConfig.apk_classes.json
   [INFO]: Extracted data stored under '/tmp/art_data'
   ```
 
+* **scripts/update-vdex-location-checksums.sh**
+
+  Update Vdex file location checksums with CRCs extracted from input Apk archive file. More
+  information on how this feature was used to trick the ART runtime book keeping mechanism and
+  bypass SafetyNet application integrity checks is available [here][census-snet].
+
+  ```text
+  $ scripts/update-vdex-location-checksums.sh -h
+    Usage: update-vdex-location-checksums.sh [options]
+      options:
+        -i|--input <file> : Input Vdex file to repair location checksum(s) within
+        -a|--app <file>   : Input Apk file to extract location checksum(s) from
+        -o|--output <dir> : Directory to save updated Vdex file (default is '.')
+        -h|--help         : This help message
+  ```
+
 
 ## Changelog
 
-* __0.3.1__ - TBC
+* __0.3.1__ - 17 November 2017
+  * Add option to update checksum location of Vdex file (`-n, --new-crc`). Feature mostly targets
+    use-cases were a backwards compatibility fix of the Vdex file is required without having to
+    dex2oat recompile.
   * Implement class name recover information gather feature (`-r, --class-recover`)
   * Add timer utility functions to measure time spend to unquicken each input Vdex file
   * Use external log file only for disassembler & verified dependencies information output
@@ -415,3 +431,9 @@ $ cat /tmp/CarrierConfig.apk_classes.json
    See the License for the specific language governing permissions and
    limitations under the License.
 ```
+
+[vdex-cr]: https://android-review.googlesource.com/#/c/264514/
+[aosp-master]: https://android.googlesource.com/platform/art/+/a1f56a8dddb88f5377a7dd4ec79640103c713d30
+[oatdump-oreo]: https://gist.github.com/anestisb/71d6b0496912f801533dec9d264aa409
+[oatdump-plus]: https://github.com/anestisb/oatdump_plus/tree/oreo-release
+[census-snet]: https://census-labs.com/news/2017/11/17/examining-the-value-of-safetynet-attestation-as-an-application-integrity-security-control/

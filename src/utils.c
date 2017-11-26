@@ -141,7 +141,7 @@ bool utils_writeToFd(int fd, const u1 *buf, off_t fileSz) {
   return true;
 }
 
-u1 *utils_mapFileToRead(char *fileName, off_t *fileSz, int *fd) {
+u1 *utils_mapFileToRead(const char *fileName, off_t *fileSz, int *fd) {
   if ((*fd = open(fileName, O_RDONLY)) == -1) {
     LOGMSG_P(l_WARN, "Couldn't open() '%s' file in R/O mode", fileName);
     return NULL;
@@ -318,4 +318,39 @@ long utils_endTimer(struct timespec *pTimeSpec) {
   clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &endTime);
   long diffInNanos = endTime.tv_nsec - pTimeSpec->tv_nsec;
   return diffInNanos;
+}
+
+u4 *utils_processFileWithCsums(const char *filePath, int *nCsums) {
+  u4 *ret = NULL;
+  FILE *pFile = fopen(filePath, "rb");
+  if (pFile == NULL) {
+    LOGMSG_P(l_WARN, "Couldn't open '%s' - R/O mode", filePath);
+    return ret;
+  }
+
+  char *lineptr = NULL;
+  size_t n = 0;
+  size_t cnt = 0;
+  u4 *checksums = NULL;
+  for (;;) {
+    if (getline(&lineptr, &n, pFile) == -1) {
+      break;
+    }
+
+    if ((checksums = utils_realloc(checksums, (cnt + 1) * sizeof(u4))) == NULL) {
+      LOGMSG_P(l_WARN, "realloc failed (sz=%zu)", (cnt + 1) * sizeof(u4));
+      goto fini;
+    }
+
+    checksums[cnt] = strtoull(lineptr, 0, 16);
+    cnt += 1;
+  }
+
+  *nCsums = cnt;
+  ret = checksums;
+
+fini:
+  free(lineptr);
+  fclose(pFile);
+  return ret;
 }

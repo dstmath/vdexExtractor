@@ -20,9 +20,11 @@
 
 */
 
-#include "vdex.h"
+#include <sys/mman.h>
+
 #include "dex_decompiler.h"
 #include "utils.h"
+#include "vdex.h"
 
 static u2 kUnresolvedMarker = (u2)(-1);
 
@@ -214,6 +216,41 @@ static bool writeDexFile(const runArgs_t *pRunArgs,
   return true;
 }
 
+static bool writeVdexFile(const runArgs_t *pRunArgs,
+                          const char *VdexFileName,
+                          u1 *buf,
+                          off_t bufSz) {
+  char *fileExt = strrchr(VdexFileName, '.');
+  if (fileExt) {
+    *fileExt = '\0';
+  }
+  char outFileName[PATH_MAX] = { 0 };
+  if (pRunArgs->outputDir == NULL) {
+    snprintf(outFileName, sizeof(outFileName), "%s_updated.vdex", VdexFileName);
+  } else {
+    const char *pFileBaseName = fileBasename(VdexFileName);
+    snprintf(outFileName, sizeof(outFileName), "%s/%s_updated.vdex", pRunArgs->outputDir,
+             pFileBaseName);
+    free((void *)pFileBaseName);
+  }
+
+  int dstfd = -1;
+  dstfd = open(outFileName, O_CREAT | O_RDWR, 0644);
+  if (dstfd == -1) {
+    LOGMSG_P(l_ERROR, "Couldn't create output file '%s'", outFileName);
+    return false;
+  }
+
+  if (!utils_writeToFd(dstfd, buf, bufSz)) {
+    close(dstfd);
+    LOGMSG(l_ERROR, "Couldn't write '%s' file", outFileName);
+    return false;
+  }
+
+  close(dstfd);
+  return true;
+}
+
 bool vdex_isMagicValid(const u1 *cursor) {
   const vdexHeader *pVdexHeader = (const vdexHeader *)cursor;
   return (memcmp(pVdexHeader->magic, kVdexMagic, sizeof(kVdexMagic)) == 0);
@@ -304,6 +341,11 @@ u4 vdex_GetLocationChecksum(const u1 *cursor, u4 fileIdx) {
   return checksums[fileIdx];
 }
 
+void vdex_SetLocationChecksum(const u1 *cursor, u4 fileIdx, u4 value) {
+  u4 *checksums = (u4 *)(cursor + sizeof(vdexHeader));
+  checksums[fileIdx] = value;
+}
+
 const u1 *vdex_GetVerifierDepsData(const u1 *cursor) {
   const vdexHeader *pVdexHeader = (const vdexHeader *)cursor;
   return vdex_DexBegin(cursor) + pVdexHeader->dexSize;
@@ -337,27 +379,28 @@ u4 vdex_GetQuickeningInfoSize(const u1 *cursor) {
 void vdex_dumpHeaderInfo(const u1 *cursor) {
   const vdexHeader *pVdexHeader = (const vdexHeader *)cursor;
 
-  LOGMSG(l_DEBUG, "------ Vdex Header Info ------");
-  LOGMSG(l_DEBUG, "magic header & version      : %.4s-%.4s", pVdexHeader->magic, pVdexHeader->version);
-  LOGMSG(l_DEBUG, "number of dex files         : %" PRIx32 " (%" PRIu32 ")",
-          pVdexHeader->numberOfDexFiles, pVdexHeader->numberOfDexFiles);
-  LOGMSG(l_DEBUG, "dex size (overall)          : %" PRIx32 " (%" PRIu32 ")", pVdexHeader->dexSize,
-          pVdexHeader->dexSize);
-  LOGMSG(l_DEBUG, "verifier dependencies size  : %" PRIx32 " (%" PRIu32 ")",
-          vdex_GetVerifierDepsDataSize(cursor), vdex_GetVerifierDepsDataSize(cursor));
-  LOGMSG(l_DEBUG, "verifier dependencies offset: %" PRIx32 " (%" PRIu32 ")",
-          vdex_GetVerifierDepsDataOffset(cursor), vdex_GetVerifierDepsDataOffset(cursor));
-  LOGMSG(l_DEBUG, "quickening info size        : %" PRIx32 " (%" PRIu32 ")",
-          vdex_GetQuickeningInfoSize(cursor), vdex_GetQuickeningInfoSize(cursor));
-  LOGMSG(l_DEBUG, "quickening info offset      : %" PRIx32 " (%" PRIu32 ")",
-          vdex_GetQuickeningInfoOffset(cursor), vdex_GetQuickeningInfoOffset(cursor));
-  LOGMSG(l_DEBUG, "dex files info              :");
+  LOGMSG_RAW(l_DEBUG, "------ Vdex Header Info ------\n");
+  LOGMSG_RAW(l_DEBUG, "magic header & version      : %.4s-%.4s\n", pVdexHeader->magic,
+             pVdexHeader->version);
+  LOGMSG_RAW(l_DEBUG, "number of dex files         : %" PRIx32 " (%" PRIu32 ")\n",
+             pVdexHeader->numberOfDexFiles, pVdexHeader->numberOfDexFiles);
+  LOGMSG_RAW(l_DEBUG, "dex size (overall)          : %" PRIx32 " (%" PRIu32 ")\n",
+             pVdexHeader->dexSize, pVdexHeader->dexSize);
+  LOGMSG_RAW(l_DEBUG, "verifier dependencies size  : %" PRIx32 " (%" PRIu32 ")\n",
+             vdex_GetVerifierDepsDataSize(cursor), vdex_GetVerifierDepsDataSize(cursor));
+  LOGMSG_RAW(l_DEBUG, "verifier dependencies offset: %" PRIx32 " (%" PRIu32 ")\n",
+             vdex_GetVerifierDepsDataOffset(cursor), vdex_GetVerifierDepsDataOffset(cursor));
+  LOGMSG_RAW(l_DEBUG, "quickening info size        : %" PRIx32 " (%" PRIu32 ")\n",
+             vdex_GetQuickeningInfoSize(cursor), vdex_GetQuickeningInfoSize(cursor));
+  LOGMSG_RAW(l_DEBUG, "quickening info offset      : %" PRIx32 " (%" PRIu32 ")\n",
+             vdex_GetQuickeningInfoOffset(cursor), vdex_GetQuickeningInfoOffset(cursor));
+  LOGMSG_RAW(l_DEBUG, "dex files info              :\n");
 
   for (u4 i = 0; i < pVdexHeader->numberOfDexFiles; ++i) {
-    LOGMSG(l_DEBUG, "  [%" PRIu32 "] location checksum : %" PRIx32 " (%" PRIu32 ")", i,
-            vdex_GetLocationChecksum(cursor, i), vdex_GetLocationChecksum(cursor, i));
+    LOGMSG_RAW(l_DEBUG, "  [%" PRIu32 "] location checksum : %" PRIx32 " (%" PRIu32 ")\n", i,
+               vdex_GetLocationChecksum(cursor, i), vdex_GetLocationChecksum(cursor, i));
   }
-  LOGMSG(l_DEBUG, "---- EOF Vdex Header Info ----");
+  LOGMSG_RAW(l_DEBUG, "---- EOF Vdex Header Info ----\n");
 }
 
 vdexDeps *vdex_initDepsInfo(const u1 *vdexFileBuf) {
@@ -688,4 +731,48 @@ int vdex_process(const char *VdexFileName, const u1 *cursor, const runArgs_t *pR
   LOGMSG(l_DEBUG, "Took %ld ms to process Vdex file", timeSpend / 1000000);
 
   return pVdexHeader->numberOfDexFiles;
+}
+
+bool vdex_updateChecksums(const char *inVdexFileName,
+                          int nCsums,
+                          u4 *checksums,
+                          const runArgs_t *pRunArgs) {
+  bool ret = false;
+  off_t fileSz = 0;
+  int srcfd = -1;
+  u1 *buf = NULL;
+
+  buf = utils_mapFileToRead(inVdexFileName, &fileSz, &srcfd);
+  if (buf == NULL) {
+    LOGMSG(l_ERROR, "'%s' open & map failed", inVdexFileName);
+    return ret;
+  }
+
+  if (!vdex_isValidVdex(buf)) {
+    LOGMSG(l_WARN, "'%s' is an invalid Vdex file", inVdexFileName);
+    goto fini;
+  }
+
+  const vdexHeader *pVdexHeader = (const vdexHeader *)buf;
+  if ((u4)nCsums != pVdexHeader->numberOfDexFiles) {
+    LOGMSG(l_ERROR, "%d checksums loaded from file, although Vdex has %" PRIu32 " Dex entries",
+           nCsums, pVdexHeader->numberOfDexFiles)
+    goto fini;
+  }
+
+  for (u4 i = 0; i < pVdexHeader->numberOfDexFiles; ++i) {
+    vdex_SetLocationChecksum(buf, i, checksums[i]);
+  }
+
+  if (!writeVdexFile(pRunArgs, inVdexFileName, buf, fileSz)) {
+    LOGMSG(l_ERROR, "Failed to write updated Vdex file");
+    goto fini;
+  }
+
+  ret = true;
+
+fini:
+  munmap(buf, fileSz);
+  close(srcfd);
+  return ret;
 }

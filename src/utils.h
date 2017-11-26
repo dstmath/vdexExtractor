@@ -27,7 +27,7 @@
 #include "common.h"
 
 bool utils_init(infiles_t *);
-u1 *utils_mapFileToRead(char *, off_t *, int *);
+u1 *utils_mapFileToRead(const char *, off_t *, int *);
 bool utils_writeToFd(int, const u1 *, off_t);
 void utils_hexDump(char *, const u1 *, int);
 char *utils_bin2hex(const unsigned char *, const size_t);
@@ -41,5 +41,7 @@ void utils_pseudoStrAppend(const char **, size_t *, size_t *, const char *);
 
 void utils_startTimer(struct timespec *);
 long utils_endTimer(struct timespec *);
+
+u4 *utils_processFileWithCsums(const char *, int *);
 
 #endif
