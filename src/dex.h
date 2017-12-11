@@ -31,6 +31,8 @@
 #define kDexVersionLen 4
 #define kSHA1Len 20
 
+static const uint16_t kDexNoIndex16 = 0xFFFF;
+
 static const u1 kDexMagic[] = { 'd', 'e', 'x', '\n' };
 static const u1 kDexMagicVersions[kNumDexVersions][kDexVersionLen] = {
   { '0', '3', '5', '\0' },
@@ -245,9 +247,7 @@ const char *dex_getMethodName(const u1 *, const dexMethodId *);
 // Dex disassembler methods
 void dex_setDisassemblerStatus(bool);
 bool dex_getDisassemblerStatus(void);
-void dex_setClassRecover(bool);
-bool dex_getClassRecover(void);
-void dex_dumpInstruction(const u1 *, u2 *, u4, u4, bool, bool *);
+void dex_dumpInstruction(const u1 *, u2 *, u4, u4, bool);
 
 // Functions to print information of primitive types (mainly used by disassembler)
 void dex_dumpClassInfo(const u1 *, u4);

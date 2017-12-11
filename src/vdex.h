@@ -27,16 +27,20 @@
 #include "common.h"
 #include "dex.h"
 
-#define kNumVdexVersions 1
+#define kUnresolvedMarker (u2)(-1)
+
+#define kNumVdexVersions 2
 #define kVdexVersionLen 4
 
 static const u1 kVdexMagic[] = { 'v', 'd', 'e', 'x' };
 static const u1 kVdexMagicVersions[kNumVdexVersions][kVdexVersionLen] = {
-  // Vdex version 006: Android "O".
+  // Vdex version 006: API-26 Android "O".
   { '0', '0', '6', '\0' },
-  // Vdex verion 010: Beyond Android "O" (current dev-master).
-  // { '0', '1', '0', '\0' },
+  // Vdex version 010: API-27 Android "O".
+  { '0', '1', '0', '\0' },
 };
+
+typedef enum { kBackendV6 = 0, kBackendV10, kBackendMax } VdexBackend;
 
 typedef u4 VdexChecksum;
 
@@ -49,7 +53,9 @@ typedef struct __attribute__((packed)) {
   u4 quickeningInfoSize;
 } vdexHeader;
 
-// Vdex files contain extracted Dex files.
+// VDEX files contain extracted DEX files. The VdexFile class maps the file to
+// memory and provides tools for accessing its individual sections.
+//
 // File format:
 //   VdexFile::Header    fixed-length header
 //
@@ -57,7 +63,15 @@ typedef struct __attribute__((packed)) {
 //   DEX[1]              the bytecode may have been quickened
 //   ...
 //   DEX[D]
-//
+//   QuickeningInfo
+//     uint8[]                     quickening data
+//     unaligned_uint32_t[2][]     table of offsets pair:
+//                                    uint32_t[0] contains code_item_offset
+//                                    uint32_t[1] contains quickening data offset from the start
+//                                                of QuickeningInfo
+//     unalgined_uint32_t[D]       start offsets (from the start of QuickeningInfo) in previous
+//                                 table for each dex file
+
 typedef struct __attribute__((packed)) {
   vdexHeader *pVdexHeader;
   dexHeader *pDexFiles;
@@ -117,23 +131,6 @@ typedef struct __attribute__((packed)) {
   vdexDepUnvfyClass *pVdexDepUnvfyClasses;
 } vdexDepUnvfyClassesSet;
 
-typedef struct __attribute__((packed)) {
-  vdexDepStrings extraStrings;
-  vdexDepTypeSet assignTypeSets;
-  vdexDepTypeSet unassignTypeSets;
-  vdexDepClassResSet classes;
-  vdexDepFieldResSet fields;
-  vdexDepMethodResSet directMethods;
-  vdexDepMethodResSet virtualMethods;
-  vdexDepMethodResSet interfaceMethods;
-  vdexDepUnvfyClassesSet unvfyClasses;
-} vdexDepData;
-
-typedef struct __attribute__((packed)) {
-  u4 numberOfDexFiles;
-  vdexDepData *pVdexDepData;
-} vdexDeps;
-
 // Verify if valid Vdex file
 bool vdex_isValidVdex(const u1 *);
 bool vdex_isMagicValid(const u1 *);
@@ -157,10 +154,11 @@ u4 vdex_GetQuickeningInfoOffset(const u1 *);
 
 void vdex_dumpHeaderInfo(const u1 *);
 
-vdexDeps *vdex_initDepsInfo(const u1 *);
-void vdex_destroyDepsInfo(const vdexDeps *);
-void vdex_dumpDepsInfo(const u1 *, const vdexDeps *);
+void *vdex_initDepsInfo(const u1 *);
+void vdex_destroyDepsInfo(const void *);
+void vdex_dumpDepsInfo(const u1 *, const void *);
 
+void vdex_backendInit(VdexBackend);
 int vdex_process(const char *, const u1 *, const runArgs_t *);
 
 bool vdex_updateChecksums(const char *, int, u4 *, const runArgs_t *);

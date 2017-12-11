@@ -32,7 +32,6 @@
 // exit() wrapper
 void exitWrapper(int errCode) {
   log_closeLogFile();
-  log_closeRecoverFile();
   exit(errCode);
 }
 
@@ -43,13 +42,11 @@ static void usage(bool exit_success) {
   LOGMSG_RAW(l_INFO,"%s",
              " -i, --input=<path>   : input dir (1 max depth) or single file\n"
              " -o, --output=<path>  : output path (default is same as input)\n"
-             " -f, --file-override  : allow output file override if already exists\n"
-             " -u, --unquicken      : enable unquicken bytecode decompiler (also known as de-odex)\n"
-             " -D, --dump-deps      : dump verified dependencies information\n"
-             " -d, --disassemble    : enable bytecode disassembler\n"
-             " -r, --class-recover  : dump information useful to recover original class name (json "
-                                     "file to output path)\n"
-             " -n, --new-crc=<path> : Text file with extracted Apk or Dex file location checksum(s)\n"
+             " -f, --file-override  : allow output file override if already exists (default: false)\n"
+             " --no-unquicken       : disable unquicken bytecode decompiler (don't de-odex)\n"
+             " --deps               : dump verified dependencies information\n"
+             " --dis                : enable bytecode disassembler\n"
+             " --new-crc=<path>     : text file with extracted Apk or Dex file location checksum(s)\n"
              " -v, --debug=LEVEL    : log level (0 - FATAL ... 4 - DEBUG), default: '3' (INFO)\n"
              " -l, --log-file=<path>: save disassembler and/or verified dependencies output to log "
                                      "file (default is STDOUT)\n"
@@ -62,6 +59,26 @@ static void usage(bool exit_success) {
 }
 // clang-format on
 
+static bool selectVdexBackend(const u1 *cursor) {
+  const vdexHeader *pVdexHeader = (const vdexHeader *)cursor;
+
+  VdexBackend ver = kBackendMax;
+  char *end;
+  switch (strtol((char *)pVdexHeader->version, &end, 10)) {
+    case 6:
+      ver = kBackendV6;
+      break;
+    case 10:
+      ver = kBackendV10;
+      break;
+    default:
+      LOGMSG(l_ERROR, "Invalid Vdex version");
+      return false;
+  }
+  vdex_backendInit(ver);
+  return true;
+}
+
 int main(int argc, char **argv) {
   int c;
   int logLevel = l_INFO;
@@ -69,10 +86,9 @@ int main(int argc, char **argv) {
   runArgs_t pRunArgs = {
     .outputDir = NULL,
     .fileOverride = false,
-    .unquicken = false,
+    .unquicken = true,
     .enableDisassembler = false,
     .dumpDeps = false,
-    .classRecover = false,
     .newCrcFile = NULL,
   };
   infiles_t pFiles = {
@@ -81,16 +97,19 @@ int main(int argc, char **argv) {
 
   if (argc < 1) usage(true);
 
-  struct option longopts[] = {
-    { "input", required_argument, 0, 'i' },   { "output", required_argument, 0, 'o' },
-    { "file-override", no_argument, 0, 'f' }, { "unquicken", no_argument, 0, 'u' },
-    { "disassemble", no_argument, 0, 'd' },   { "dump-deps", no_argument, 0, 'D' },
-    { "class-recover", no_argument, 0, 'r' }, { "new-crc", required_argument, 0, 'n' },
-    { "debug", required_argument, 0, 'v' },   { "log-file", required_argument, 0, 'l' },
-    { "help", no_argument, 0, 'h' },          { 0, 0, 0, 0 }
-  };
+  struct option longopts[] = { { "input", required_argument, 0, 'i' },
+                               { "output", required_argument, 0, 'o' },
+                               { "file-override", no_argument, 0, 'f' },
+                               { "no-unquicken", no_argument, 0, 0x101 },
+                               { "dis", no_argument, 0, 0x102 },
+                               { "deps", no_argument, 0, 0x103 },
+                               { "new-crc", required_argument, 0, 0x104 },
+                               { "debug", required_argument, 0, 'v' },
+                               { "log-file", required_argument, 0, 'l' },
+                               { "help", no_argument, 0, 'h' },
+                               { 0, 0, 0, 0 } };
 
-  while ((c = getopt_long(argc, argv, "i:o:fudDrn:v:l:h", longopts, NULL)) != -1) {
+  while ((c = getopt_long(argc, argv, "i:o:fv:l:h?", longopts, NULL)) != -1) {
     switch (c) {
       case 'i':
         pFiles.inputFile = optarg;
@@ -101,22 +120,16 @@ int main(int argc, char **argv) {
       case 'f':
         pRunArgs.fileOverride = true;
         break;
-      case 'u':
-        pRunArgs.unquicken = true;
+      case 0x101:
+        pRunArgs.unquicken = false;
         break;
-      case 'd':
+      case 0x102:
         pRunArgs.enableDisassembler = true;
-        log_setDisStatus(true);
         break;
-      case 'D':
+      case 0x103:
         pRunArgs.dumpDeps = true;
-        log_setDisStatus(true);
         break;
-      case 'r':
-        pRunArgs.classRecover = true;
-        pRunArgs.enableDisassembler = true;
-        break;
-      case 'n':
+      case 0x104:
         pRunArgs.newCrcFile = optarg;
         break;
       case 'v':
@@ -125,6 +138,7 @@ int main(int argc, char **argv) {
       case 'l':
         logFile = optarg;
         break;
+      case '?':
       case 'h':
         usage(true);
         break;
@@ -132,12 +146,6 @@ int main(int argc, char **argv) {
         exitWrapper(EXIT_FAILURE);
         break;
     }
-  }
-
-  // We don't want to increase the complexity of the unquicken decompiler, so offer class name
-  // recover checks only when simply walking the Vdex file
-  if (pRunArgs.unquicken && pRunArgs.classRecover) {
-    LOGMSG(l_FATAL, "Class name recover cannot be used in parallel with unquicken decompiler");
   }
 
   // Adjust log level
@@ -221,18 +229,31 @@ int main(int argc, char **argv) {
     }
     vdex_dumpHeaderInfo(buf);
 
+    if (!selectVdexBackend(buf)) {
+      LOGMSG(l_WARN, "Failed to initialize Vdex backend - skipping '%s'", pFiles.files[f]);
+      munmap(buf, fileSz);
+      close(srcfd);
+      continue;
+    }
+
     // Dump Vdex verified dependencies info
     if (pRunArgs.dumpDeps) {
-      vdexDeps *pVdexDeps = vdex_initDepsInfo(buf);
-      if (pVdexDeps == NULL) {
+      log_setDisStatus(true);
+      void *pDepsData = vdex_initDepsInfo(buf);
+      if (pDepsData == NULL) {
         LOGMSG(l_WARN, "Empty verified dependency data")
       } else {
         // TODO: Migrate this to vdex_process to avoid iterating Dex files twice. For now it's not
         // a priority since the two flags offer different functionalities thus no point using them
         // at the same time.
-        vdex_dumpDepsInfo(buf, pVdexDeps);
-        vdex_destroyDepsInfo(pVdexDeps);
+        vdex_dumpDepsInfo(buf, pDepsData);
+        vdex_destroyDepsInfo(pDepsData);
       }
+      log_setDisStatus(false);
+    }
+
+    if (pRunArgs.enableDisassembler) {
+      log_setDisStatus(true);
     }
 
     // Unquicken Dex bytecode or simply walk optimized Dex files

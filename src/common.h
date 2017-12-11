@@ -96,6 +96,9 @@ typedef int16_t s2;
 typedef int32_t s4;
 typedef int64_t s8;
 
+typedef __attribute__((__aligned__(1))) uint32_t unaligned_u4;
+typedef __attribute__((__aligned__(1))) int32_t unaligned_s4;
+
 #define CHECK_IMPL(c1, op, c2)                                                         \
   do {                                                                                 \
     u8 v1 = (u8)(c1);                                                                  \
@@ -112,7 +115,7 @@ typedef int64_t s8;
 #define CHECK_GE(a, b) CHECK_IMPL((a), >=, (b))
 
 #define PROG_NAME "vdexExtractor"
-#define PROG_VERSION "0.3.1"
+#define PROG_VERSION "0.4.0"
 #define PROG_AUTHORS                                    \
   "    Anestis Bechtsoudis <anestis@census-labs.com>\n" \
   "  Copyright 2017 by CENSUS S.A. All Rights Reserved."
@@ -129,7 +132,6 @@ typedef struct {
   bool unquicken;
   bool enableDisassembler;
   bool dumpDeps;
-  bool classRecover;
   char *newCrcFile;
 } runArgs_t;
 

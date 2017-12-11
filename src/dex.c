@@ -24,7 +24,6 @@
 #include "utils.h"
 
 static bool enableDisassembler = false;
-static bool enableClassRecover = false;
 
 static inline u2 get2LE(unsigned char const *pSrc) { return pSrc[0] | (pSrc[1] << 8); }
 
@@ -40,7 +39,7 @@ static char *indexString(const u1 *dexFileBuf, u2 *codePtr, u4 bufSize) {
   u4 index = 0;
   u4 secondary_index = kInvalidIndex;
   u4 width = 4;
-  switch (kInstructionFormats[dexInstr_getOpcode(codePtr)]) {
+  switch (kInstructionDescriptors[dexInstr_getOpcode(codePtr)].format) {
     // SOME NOT SUPPORTED:
     // case k20bc:
     case k21c:
@@ -74,7 +73,7 @@ static char *indexString(const u1 *dexFileBuf, u2 *codePtr, u4 bufSize) {
 
   // Determine index type.
   size_t outSize = 0;
-  switch (kInstructionIndexTypes[dexInstr_getOpcode(codePtr)]) {
+  switch (kInstructionDescriptors[dexInstr_getOpcode(codePtr)].index_type) {
     case kIndexUnknown:
       // This function should never get called for this type, but do
       // something sensible here, just to help with debugging.
@@ -645,13 +644,6 @@ void dex_dumpClassInfo(const u1 *dexFileBuf, u4 idx) {
             pDexClassDataHeader.directMethodsSize, pDexClassDataHeader.virtualMethodsSize);
   }
 
-  if (enableClassRecover) {
-    const char *classDescriptorFormatedLong = dex_descriptorClassToDotLong(classDescriptor);
-    log_clsRecWrite("    { \"name\": \"%s\", \"srcFileName\": \"%s\", ",
-                    classDescriptorFormatedLong, srcFileName);
-    free((void *)classDescriptorFormatedLong);
-  }
-
   free((void *)classAccessStr);
   free((void *)classDescriptorFormated);
 }
@@ -674,14 +666,10 @@ void dex_dumpMethodInfo(const u1 *dexFileBuf,
   free((void *)typeDesc);
 }
 
-void dex_dumpInstruction(const u1 *dexFileBuf,
-                         u2 *codePtr,
-                         u4 codeOffset,
-                         u4 insnIdx,
-                         bool highlight,
-                         bool *foundLogUtilCall) {
-  // Save time if no disassemble or no classRecover
-  if (enableDisassembler == false && enableClassRecover == false) return;
+void dex_dumpInstruction(
+    const u1 *dexFileBuf, u2 *codePtr, u4 codeOffset, u4 insnIdx, bool highlight) {
+  // Save time if no disassemble
+  if (enableDisassembler == false) return;
 
   // Highlight decompile instructions
   if (highlight) {
@@ -727,18 +715,13 @@ void dex_dumpInstruction(const u1 *dexFileBuf,
 
   // Set up additional argument.
   char *indexBuf = NULL;
-  if (kInstructionIndexTypes[(dexInstr_getOpcode(codePtr))] != kIndexNone) {
+  if (kInstructionDescriptors[dexInstr_getOpcode(codePtr)].index_type != kIndexNone) {
     const size_t kDefaultIndexStrLen = 256;
     indexBuf = indexString(dexFileBuf, codePtr, kDefaultIndexStrLen);
-
-    if (enableClassRecover && !*foundLogUtilCall && strstr(indexBuf, "Landroid/util/Log;.")) {
-      log_clsRecWrite("\"callsLogUtil\": true");
-      *foundLogUtilCall = true;
-    }
   }
 
   // Dump the instruction.
-  switch (kInstructionFormats[dexInstr_getOpcode(codePtr)]) {
+  switch (kInstructionDescriptors[dexInstr_getOpcode(codePtr)].format) {
     case k10x:  // op
       break;
     case k12x:  // op vA, vB
@@ -967,6 +950,3 @@ char *dex_descriptorClassToDotLong(const char *str) {
 
 void dex_setDisassemblerStatus(bool status) { enableDisassembler = status; }
 bool dex_getDisassemblerStatus(void) { return enableDisassembler; }
-
-void dex_setClassRecover(bool status) { enableClassRecover = status; }
-bool dex_getClassRecover(void) { return enableClassRecover; }
