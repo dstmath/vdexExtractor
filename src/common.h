@@ -4,7 +4,7 @@
    -----------------------------------------
 
    Anestis Bechtsoudis <anestis@census-labs.com>
-   Copyright 2017 by CENSUS S.A. All Rights Reserved.
+   Copyright 2017 - 2018 by CENSUS S.A. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -115,10 +115,10 @@ typedef __attribute__((__aligned__(1))) int32_t unaligned_s4;
 #define CHECK_GE(a, b) CHECK_IMPL((a), >=, (b))
 
 #define PROG_NAME "vdexExtractor"
-#define PROG_VERSION "0.4.0"
+#define PROG_VERSION "0.4.1"
 #define PROG_AUTHORS                                    \
   "    Anestis Bechtsoudis <anestis@census-labs.com>\n" \
-  "  Copyright 2017 by CENSUS S.A. All Rights Reserved."
+  "  Copyright 2017 - 2018 by CENSUS S.A. All Rights Reserved."
 
 typedef struct {
   char *inputFile;
@@ -131,6 +131,7 @@ typedef struct {
   bool fileOverride;
   bool unquicken;
   bool enableDisassembler;
+  bool ignoreCrc;
   bool dumpDeps;
   char *newCrcFile;
 } runArgs_t;

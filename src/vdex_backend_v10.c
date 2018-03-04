@@ -4,7 +4,7 @@
    -----------------------------------------
 
    Anestis Bechtsoudis <anestis@census-labs.com>
-   Copyright 2017 by CENSUS S.A. All Rights Reserved.
+   Copyright 2017 - 2018 by CENSUS S.A. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -446,10 +446,15 @@ int vdex_process_v10(const char *VdexFileName, const u1 *cursor, const runArgs_t
       // If unquicken was successful original checksum should verify
       u4 curChecksum = dex_computeDexCRC(dexFileBuf, pDexHeader->fileSize);
       if (curChecksum != pDexHeader->checksum) {
-        LOGMSG(l_ERROR,
-               "Unexpected checksum (%" PRIx32 " vs %" PRIx32 ") - failed to unquicken Dex file",
-               curChecksum, pDexHeader->checksum);
-        return -1;
+        // If ignore CRC errors is enabled, repair CRC (see issue #3)
+        if (pRunArgs->ignoreCrc) {
+          dex_repairDexCRC(dexFileBuf, pDexHeader->fileSize);
+        } else {
+          LOGMSG(l_ERROR,
+                 "Unexpected checksum (%" PRIx32 " vs %" PRIx32 ") - failed to unquicken Dex file",
+                 curChecksum, pDexHeader->checksum);
+          return -1;
+        }
       }
     } else {
       // Repair CRC if not decompiling so we can still run Dex parsing tools against output
