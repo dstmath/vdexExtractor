@@ -35,7 +35,7 @@ endif
 default: $(TARGET)
 all: default
 
-OBJECTS = $(patsubst %.c, %.o, $(wildcard *.c))
+OBJECTS = $(patsubst %.c, %.o, $(wildcard *.c) $(wildcard */*.c))
 HEADERS = $(wildcard *.h)
 
 %.o: %.c $(HEADERS)
@@ -49,9 +49,10 @@ $(TARGET): $(OBJECTS)
 
 clean:
 	-rm -f *.o
+	-rm -f */*.o
 	-rm -f $(TARGET)
 
 format:
 	clang-format -style="{BasedOnStyle: Google, \
     IndentWidth: 2, Cpp11BracedListStyle: false, \
-    BinPackParameters: false, ColumnLimit: 100}" -i -sort-includes *.c *.h
+    BinPackParameters: false, ColumnLimit: 100}" -i -sort-includes *.c *.h */*.c */*.h
