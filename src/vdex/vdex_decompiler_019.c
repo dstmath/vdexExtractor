@@ -28,18 +28,23 @@ static size_t quicken_info_number_of_indices;
 static size_t quicken_index;
 
 static u2 GetData(size_t index) {
-  return quicken_info_ptr[index * 2] | (u2)(quicken_info_ptr[index * 2 + 1] << 8);
+  return quicken_info_ptr[index * 2] | ((u2)(quicken_info_ptr[index * 2 + 1]) << 8);
 }
 
-static u4 NumberOfIndices(const vdex_data_array_t *pQuickInfo) {
-  const u1 *data = pQuickInfo->data;
-  return pQuickInfo->size != 0 ? dex_readULeb128(&data) : 0u;
+static u4 NumberOfIndices(const u1 **data, u4 data_size) {
+  return data_size != 0 ? dex_readULeb128(data) : 0u;
 }
 
 static u2 *code_ptr;
 static u2 *code_end;
 static u4 dex_pc;
 static u4 cur_code_off;
+
+static void initQuickenInfoTable(const vdex_data_array_t *quickenData) {
+  quicken_info_ptr = quickenData->data;
+  quicken_index = 0;
+  quicken_info_number_of_indices = NumberOfIndices(&quicken_info_ptr, quickenData->size);
+}
 
 static void initCodeIterator(u2 *pCode, u4 codeSize, u4 startCodeOff) {
   code_ptr = pCode;
@@ -102,25 +107,15 @@ bool vdex_decompiler_019_decompile(const u1 *dexFileBuf,
     return true;
   }
 
-  // We have different code items in StandardDex and CompactDex
+  // Get method's CodeItem information
   u2 *pCode = NULL;
   u4 codeSize = 0;
-  if (dex_checkType(dexFileBuf) == kNormalDex) {
-    dexCode *pDexCode = (dexCode *)(dex_getDataAddr(dexFileBuf) + pDexMethod->codeOff);
-    pCode = pDexCode->insns;
-    codeSize = pDexCode->insnsSize;
-  } else {
-    cdexCode *pCdexCode = (cdexCode *)(dex_getDataAddr(dexFileBuf) + pDexMethod->codeOff);
-    pCode = pCdexCode->insns;
-    dex_DecodeCDexFields(pCdexCode, &codeSize, NULL, NULL, NULL, NULL, true);
-  }
+  dex_getCodeItemInfo(dexFileBuf, pDexMethod, &pCode, &codeSize);
 
   u4 startCodeOff = dex_getFirstInstrOff(dexFileBuf, pDexMethod);
 
   // Initialize global data for every method that is decompiled
-  quicken_info_ptr = quickenData->data;
-  quicken_index = 0;
-  quicken_info_number_of_indices = NumberOfIndices(quickenData);
+  initQuickenInfoTable(quickenData);
   initCodeIterator(pCode, codeSize, startCodeOff);
 
   log_dis("    quickening_size=%" PRIx32 " (%" PRIu32 ")\n", quickenData->size, quickenData->size);

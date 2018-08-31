@@ -132,6 +132,7 @@ void vdex_019_GetQuickeningInfo(const u1 *cursor, vdex_data_array_t *pQuickInfo)
   } else {
     pQuickInfo->data = NULL;
     pQuickInfo->offset = -1;
+    pQuickInfo->size = 0;
   }
 }
 
@@ -139,7 +140,7 @@ void vdex_019_GetQuickenInfoOffsetTable(const u1 *dexBuf,
                                         const vdex_data_array_t *pQuickInfo,
                                         vdex_data_array_t *pOffTable) {
   // The offset is in preheader right before the beginning of the Dex file
-  const u4 offset = (u4)(dexBuf[-4]);
+  const u4 offset = ((u4 *)dexBuf)[-1];
   CHECK_LE(offset, pQuickInfo->size);
 
   pOffTable->size = pQuickInfo->size - offset;
@@ -238,7 +239,7 @@ bool vdex_019_SanityCheck(const u1 *cursor, size_t bufSz) {
   // Check that verifier deps section doesn't point past the end of file
   vdex_data_array_t vDeps;
   vdex_019_GetVerifierDeps(cursor, &vDeps);
-  if (vDeps.offset + vDeps.size > bufSz) {
+  if (vDeps.size > 0 && ((vDeps.offset + vDeps.size) > bufSz)) {
     LOGMSG(l_ERROR, "Verifier dependencies section points past the end of file (%" PRIx32
                     " + %" PRIx32 " > %" PRIx32 ")",
            vDeps.offset, vDeps.size, bufSz);
@@ -248,7 +249,7 @@ bool vdex_019_SanityCheck(const u1 *cursor, size_t bufSz) {
   // Check that quickening info section doesn't point past the end of file
   vdex_data_array_t quickInfo;
   vdex_019_GetQuickeningInfo(cursor, &quickInfo);
-  if (quickInfo.offset + quickInfo.size > bufSz) {
+  if (quickInfo.size > 0 && ((quickInfo.offset + quickInfo.size) > bufSz)) {
     LOGMSG(l_ERROR, "Quickening info section points past the end of file (%" PRIx32 " + %" PRIx32
                     " > %" PRIx32 ")",
            quickInfo.offset, quickInfo.size, bufSz);

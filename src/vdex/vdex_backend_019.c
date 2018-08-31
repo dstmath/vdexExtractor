@@ -22,6 +22,7 @@
 
 #include <sys/mman.h>
 
+#include "../hashset/hashset.h"
 #include "../out_writer.h"
 #include "../utils.h"
 #include "vdex_backend_019.h"
@@ -37,8 +38,8 @@ static inline int POPCOUNT(uintptr_t x) {
 
 static void initCompactOffset(const u1 *cursor) {
   pCompactOffsetDataBegin = cursor + (2 * sizeof(u4));
-  compactOffsetMinOffset = (u4)(cursor[0]);  // First 4 bytes are are the minimum offset
-  u4 tableOffset = (u4)(cursor[4]);          // Next 4 bytes are the table offset
+  compactOffsetMinOffset = ((u4 *)cursor)[0];  // First 4 bytes are are the minimum offset
+  u4 tableOffset = ((u4 *)cursor)[1];          // Next 4 bytes are the table offset
   pCompactOffsetTable = (u4 *)(pCompactOffsetDataBegin + tableOffset);
 }
 
@@ -414,6 +415,13 @@ int vdex_backend_019_process(const char *VdexFileName,
       initCompactOffset(quickenInfoOffTable.data);
     }
 
+    // Make sure to not unquicken the same code item multiple times.
+    hashset_t unquickened_code_items = hashset_create();
+    if (!unquickened_code_items) {
+      LOGMSG(l_ERROR, "Failed to create hashset");
+      return -1;
+    }
+
     // For each class
     log_dis("file #%zu: classDefsSize=%" PRIu32 "\n", dex_file_idx,
             dex_getClassDefsSize(dexFileBuf));
@@ -458,20 +466,30 @@ int vdex_backend_019_process(const char *VdexFileName,
         dexMethod curDexMethod;
         memset(&curDexMethod, 0, sizeof(dexMethod));
         dex_readClassDataMethod(&curClassDataCursor, &curDexMethod);
-        dex_dumpMethodInfo(dexFileBuf, &curDexMethod, j, "direct");
+        dex_dumpMethodInfo(dexFileBuf, &curDexMethod, lastIdx, "direct");
 
         // Skip empty methods
         if (curDexMethod.codeOff == 0) {
-          continue;
+          goto next_dmethod;
         }
 
         if (pRunArgs->unquicken) {
+          // Check if we've already unquickened the code item
+          u2 *pCode = NULL;
+          u4 codeSize = 0;
+          dex_getCodeItemInfo(dexFileBuf, &curDexMethod, &pCode, &codeSize);
+          if (hashset_is_member(unquickened_code_items, (void *)pCode)) {
+            vdex_decompiler_019_walk(dexFileBuf, &curDexMethod);
+            goto next_dmethod;
+          }
+
+          // Since new code item, add to set
+          hashset_add(unquickened_code_items, (void *)pCode);
+
           // Offset being 0 means not quickened.
           const u4 qOffset = getOffset(lastIdx + curDexMethod.methodIdx);
 
-          // Update lastIdx since followings delta_idx are based on 1st elements idx
-          lastIdx += curDexMethod.methodIdx;
-
+          // Get quickenData for method and decompile
           vdex_data_array_t quickenData;
           memset(&quickenData, 0, sizeof(vdex_data_array_t));
           if (quickenInfo.size != 0 && qOffset != 0u) {
@@ -480,12 +498,17 @@ int vdex_backend_019_process(const char *VdexFileName,
 
           if (!vdex_decompiler_019_decompile(dexFileBuf, &curDexMethod, &quickenData, true)) {
             LOGMSG(l_ERROR, "Failed to decompile Dex file");
+            hashset_destroy(unquickened_code_items);
             return -1;
           }
+
+        next_dmethod:
+          // Update lastIdx since followings delta_idx are based on 1st elements idx
+          lastIdx += curDexMethod.methodIdx;
         } else {
           vdex_decompiler_019_walk(dexFileBuf, &curDexMethod);
         }
-      }
+      }  // EOF direct methods iterator
 
       // For each virtual method
       lastIdx = 0;
@@ -493,20 +516,30 @@ int vdex_backend_019_process(const char *VdexFileName,
         dexMethod curDexMethod;
         memset(&curDexMethod, 0, sizeof(dexMethod));
         dex_readClassDataMethod(&curClassDataCursor, &curDexMethod);
-        dex_dumpMethodInfo(dexFileBuf, &curDexMethod, j, "virtual");
+        dex_dumpMethodInfo(dexFileBuf, &curDexMethod, lastIdx, "virtual");
 
         // Skip native or abstract methods
         if (curDexMethod.codeOff == 0) {
-          continue;
+          goto next_vmethod;
         }
 
         if (pRunArgs->unquicken) {
+          // Check if we've already unquickened the code item
+          u2 *pCode = NULL;
+          u4 codeSize = 0;
+          dex_getCodeItemInfo(dexFileBuf, &curDexMethod, &pCode, &codeSize);
+          if (hashset_is_member(unquickened_code_items, (void *)pCode)) {
+            vdex_decompiler_019_walk(dexFileBuf, &curDexMethod);
+            goto next_vmethod;
+          }
+
+          // Since new code item, add to set
+          hashset_add(unquickened_code_items, (void *)pCode);
+
           // Offset being 0 means not quickened.
           const u4 qOffset = getOffset(lastIdx + curDexMethod.methodIdx);
 
-          // Update lastIdx since followings delta_idx are based on 1st elements idx
-          lastIdx += curDexMethod.methodIdx;
-
+          // Get quickenData for method and decompile
           vdex_data_array_t quickenData;
           memset(&quickenData, 0, sizeof(vdex_data_array_t));
           if (quickenInfo.size != 0 && qOffset != 0u) {
@@ -515,13 +548,21 @@ int vdex_backend_019_process(const char *VdexFileName,
 
           if (!vdex_decompiler_019_decompile(dexFileBuf, &curDexMethod, &quickenData, true)) {
             LOGMSG(l_ERROR, "Failed to decompile Dex file");
+            hashset_destroy(unquickened_code_items);
             return -1;
           }
+
+        next_vmethod:
+          // Update lastIdx since followings delta_idx are based on 1st elements idx
+          lastIdx += curDexMethod.methodIdx;
         } else {
           vdex_decompiler_019_walk(dexFileBuf, &curDexMethod);
         }
-      }
+      }  // EOF virtual methods iterator
     }
+
+    // Destroy hashset for current dex file
+    hashset_destroy(unquickened_code_items);
 
     if (pRunArgs->unquicken) {
       // TODO: Update this after a method to convert CDEX->DEX is decided
@@ -551,7 +592,7 @@ int vdex_backend_019_process(const char *VdexFileName,
                            dex_getFileSize(dexFileBuf))) {
       return -1;
     }
-  }
+  }  // EOF of dex file iterator
 
   return pVdexHeader->numberOfDexFiles;
 }
